@@ -30,7 +30,7 @@ class MessageProcessor:
             raise TypeError("The shared_secred must be either str, bytes or None.")
 
     def process_inbound(self, message: str) -> str:
-        pass
+        plaintext = self._aead.decrypt(token=message)
 
     def process_outbound(
         self,
