@@ -28,3 +28,19 @@ def test_encryption_with_associated_data():
     assert token is not None
     associated_data_from_token = base64_decode(token.split(".")[0])
     assert associated_data_from_token == associated_data
+
+
+def test_decryption_with_no_associated_data():
+    message = b"Encrypt me"
+    processor.shared_secret = b"My super secret"
+    token = processor.process_outbound(message=message)
+    processor.process_inbound(message=token)
+
+
+def test_decryption_with_associated_data():
+    message = b"Encrypt me"
+    associated_data = b"jdoe"
+    processor.shared_secret = b"My super secret"
+    token = processor.process_outbound(message=message, associated_data=associated_data)
+    print(token)
+    processor.process_inbound(message=token)
