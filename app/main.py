@@ -21,7 +21,6 @@ limitations under the License.
 
 import argparse
 import code
-import os
 import sys
 import threading
 from argparse import RawTextHelpFormatter
@@ -30,6 +29,7 @@ from enum import Enum
 from InquirerPy import inquirer
 from InquirerPy.base.control import Choice
 from InquirerPy.separator import Separator
+from tabulate import tabulate
 from websocket import WebSocketApp, WebSocketConnectionClosedException
 
 
@@ -99,6 +99,8 @@ def parse_args():
 class Action(Enum):
     CHAT = "Start chat"
     SECRETS = "Manage secrets"
+    SHOW_SECRETS = "Show secrets"
+    ADD_SECRET = "Add/update a secret"
     EXIT = "Exit"
 
 
@@ -148,16 +150,10 @@ def on_close(ws, stopped_event):
 
 def main():
     args = parse_args()
-    if args.secure is not None:
-        if args.secure == Secure.PASS.value:
-            WS_PASSWORD = os.getenv("WS_PASSWORD")
-            print(WS_PASSWORD)
-        elif args.secure == Secure.ECDHE.value:
-            pass
-
     header = {}
+    secrets = {}
 
-    print(fg.GREEN + "Press Ctrl+C to quit" + fg.RESET)
+    print(fg.RED + "Press Ctrl+C to quit" + fg.RESET)
     print(fg.GREEN + "Connecting to server. Please wait ..." + fg.RESET)
 
     started_event = threading.Event()
@@ -175,19 +171,20 @@ def main():
     thread = threading.Thread(target=ws.run_forever)
     thread.daemon = True
     thread.start()
+
     try:
         while True:
-            selected_action = inquirer.select(
+            action = inquirer.select(
                 message="Select your action:",
                 choices=[
-                    Separator(),
+                    Separator(line=f"----- Main menu -----"),
                     Choice(value=Action.CHAT, name=Action.CHAT.value),
                     Choice(value=Action.SECRETS, name=Action.SECRETS.value),
                     Choice(value=Action.EXIT, name=Action.EXIT.value),
                 ],
             ).execute()
 
-            if selected_action == Action.CHAT:
+            if action == Action.CHAT:
                 started_event.wait(timeout=5)
                 while not stopped_event.is_set():
                     try:
@@ -200,7 +197,60 @@ def main():
                         return
                     except WebSocketConnectionClosedException:
                         return
-            elif selected_action == Action.EXIT:
+            elif action == Action.SECRETS:
+                while True:
+                    try:
+                        action_secrets = inquirer.select(
+                            message="Select your action:",
+                            choices=[
+                                Separator(
+                                    line=f"----- Main menu > {Action.SECRETS.value} -----"
+                                ),
+                                Choice(
+                                    value=Action.ADD_SECRET,
+                                    name=Action.ADD_SECRET.value,
+                                ),
+                                Choice(
+                                    value=Action.SHOW_SECRETS,
+                                    name=Action.SHOW_SECRETS.value,
+                                ),
+                                Choice(value=Action.EXIT, name=Action.EXIT.value),
+                            ],
+                        ).execute()
+
+                        if action_secrets == Action.ADD_SECRET:
+                            print(
+                                Separator(
+                                    line=f"----- Main menu > {Action.SECRETS.value} > {Action.ADD_SECRET.value} -----"
+                                )
+                            )
+                            username = (
+                                inquirer.text(message="Enter a client name:")
+                                .execute()
+                                .strip()
+                            )
+                            secret = (
+                                inquirer.secret(
+                                    message=f"Enter a secret for client '{username}':"
+                                )
+                                .execute()
+                                .strip()
+                            )
+                            secrets.update({username: secret})
+                        elif action_secrets == Action.SHOW_SECRETS:
+                            table = [[c, s] for c, s in secrets.items()]
+                            print(
+                                tabulate(
+                                    table,
+                                    headers=["Client name", "Secret"],
+                                    tablefmt="fancy_grid",
+                                )
+                            )
+                        elif action_secrets == Action.EXIT:
+                            break
+                    except KeyboardInterrupt:
+                        break
+            elif action == Action.EXIT:
                 sys.exit(0)
     except KeyboardInterrupt:
         pass
