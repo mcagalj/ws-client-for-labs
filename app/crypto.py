@@ -60,6 +60,19 @@ class InvalidToken(Exception):
     pass
 
 
+Token = namedtuple("Token", ["timestamp", "iv", "ciphertext", "hmac"])
+TokenAD = namedtuple(
+    "Token",
+    [
+        "associated_data",
+        "timestamp",
+        "iv",
+        "ciphertext",
+        "hmac",
+    ],
+)
+
+
 class AuthenticatedEncryption:
     """
     Heavily inspired by Fernet (https://cryptography.io).
@@ -106,7 +119,6 @@ class AuthenticatedEncryption:
         if associated_data is not None:
             basic_parts = associated_data + basic_parts + associated_data_len
             basic_parts_encoded.insert(0, base64_encode(associated_data))
-            basic_parts_encoded.append(base64_encode(associated_data_len))
 
         h = HMAC(self._signing_key, hashes.SHA256())
         h.update(basic_parts)
@@ -121,39 +133,22 @@ class AuthenticatedEncryption:
         check_string("token", token)
         token_parts = token.split(_TOKEN_DELIMITER)
         token_parts_count = len(token_parts)
-
-        if token_parts_count != 4 and token_parts_count != 6:
+        if token_parts_count != 4 and token_parts_count != 5:
             raise InvalidToken
 
         try:
             associated_data = False if token_parts_count == 4 else True
-            Token = (
-                namedtuple("Token", ["timestamp", "iv", "ciphertext", "hmac"])
-                if not associated_data
-                else namedtuple(
-                    "Token",
-                    [
-                        "associated_data",
-                        "timestamp",
-                        "iv",
-                        "ciphertext",
-                        "associated_data_len",
-                        "hmac",
-                    ],
-                )
+            token = (
+                Token(*token_parts) if not associated_data else TokenAD(*token_parts)
             )
-
-            token = Token(*token_parts)
 
             associated_data = (
                 base64_decode(token.associated_data) if associated_data else None
             )
+
             timestamp = base64_decode(token.timestamp)
             iv = base64_decode(token.iv)
             ciphertext = base64_decode(token.ciphertext)
-            associated_data_len = (
-                base64_decode(token.associated_data_len) if associated_data else None
-            )
             hmac = base64_decode(token.hmac)
         except (TypeError, binascii.Error):
             raise InvalidToken
@@ -162,6 +157,10 @@ class AuthenticatedEncryption:
 
         basic_parts = timestamp + iv + ciphertext
         if associated_data is not None:
+            associated_data_len = len(associated_data) * 8
+            associated_data_len = associated_data_len.to_bytes(
+                length=8, byteorder="big"
+            )
             basic_parts = associated_data + basic_parts + associated_data_len
 
         self._verify_signature(data=basic_parts, hmac=hmac)
