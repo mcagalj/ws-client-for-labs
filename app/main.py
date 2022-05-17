@@ -27,6 +27,8 @@ import threading
 from argparse import RawTextHelpFormatter
 from enum import Enum
 
+from InquirerPy import inquirer
+from InquirerPy.separator import Separator
 from websocket import WebSocketApp, WebSocketConnectionClosedException
 
 
@@ -91,6 +93,12 @@ def parse_args():
     )
 
     return parser.parse_args()
+
+
+class Actions(Enum):
+    CHAT = "Start chat"
+    MANAGE_SECRETS = "Manage secrets"
+    EXIT = "Exit"
 
 
 class RawInput:
@@ -166,19 +174,35 @@ def main():
     thread = threading.Thread(target=ws.run_forever)
     thread.daemon = True
     thread.start()
+    try:
+        while True:
+            selected_action = inquirer.select(
+                message="Select your action:",
+                choices=[
+                    Separator(),
+                    Actions.CHAT.value,
+                    Actions.MANAGE_SECRETS.value,
+                    Actions.EXIT.value,
+                ],
+            ).execute()
 
-    started_event.wait(timeout=5)
-    while not stopped_event.is_set():
-        try:
-            message = console.read()
-            # message = b64encode(message)
-            ws.send(message)
-        except KeyboardInterrupt:
-            return
-        except EOFError:
-            return
-        except WebSocketConnectionClosedException:
-            return
+            if selected_action == "Start chat":
+                started_event.wait(timeout=5)
+                while not stopped_event.is_set():
+                    try:
+                        message = console.read()
+                        # message = b64encode(message)
+                        ws.send(message)
+                    except KeyboardInterrupt:
+                        break
+                    except EOFError:
+                        return
+                    except WebSocketConnectionClosedException:
+                        return
+            elif selected_action == "Exit":
+                sys.exit(0)
+    except KeyboardInterrupt:
+        pass
 
 
 if __name__ == "__main__":
