@@ -28,6 +28,7 @@ from argparse import RawTextHelpFormatter
 from enum import Enum
 
 from InquirerPy import inquirer
+from InquirerPy.base.control import Choice
 from InquirerPy.separator import Separator
 from websocket import WebSocketApp, WebSocketConnectionClosedException
 
@@ -78,26 +79,26 @@ def parse_args():
         help="websocket url (eg. ws://10.0.2.4/ws/<client_id>)",
     )
 
-    parser.add_argument(
-        "-s",
-        "--secure",
-        action="store",
-        choices=["pass", "ecdhe"],
-        help="Secure outbound messages.\n\n"
-        "OPTIONS:\n"
-        "{pass} - use a shared password to derive required secret keys.\n"
-        "The password is provided through an environment variable WS_PASSWORD.\n\n"
-        "{ecdhe} - use ephemeral elliptic curve Diffie-Hellman to establish secret keys.\n"
-        "Diffie-Hellman ephemeral keys are signed by an appropriate elliptic curve-based signature algorithm ECDSA.\n"
-        "Signature verification public keys are loaded from a YAML file settings.yaml.",
-    )
+    # parser.add_argument(
+    #     "-s",
+    #     "--secure",
+    #     action="store",
+    #     choices=["pass", "ecdhe"],
+    #     help="Secure outbound messages.\n\n"
+    #     "OPTIONS:\n"
+    #     "{pass} - use a shared password to derive required secret keys.\n"
+    #     "The password is provided through an environment variable WS_PASSWORD.\n\n"
+    #     "{ecdhe} - use ephemeral elliptic curve Diffie-Hellman to establish secret keys.\n"
+    #     "Diffie-Hellman ephemeral keys are signed by an appropriate elliptic curve-based signature algorithm ECDSA.\n"
+    #     "Signature verification public keys are loaded from a YAML file settings.yaml.",
+    # )
 
     return parser.parse_args()
 
 
-class Actions(Enum):
+class Action(Enum):
     CHAT = "Start chat"
-    MANAGE_SECRETS = "Manage secrets"
+    SECRETS = "Manage secrets"
     EXIT = "Exit"
 
 
@@ -180,13 +181,13 @@ def main():
                 message="Select your action:",
                 choices=[
                     Separator(),
-                    Actions.CHAT.value,
-                    Actions.MANAGE_SECRETS.value,
-                    Actions.EXIT.value,
+                    Choice(value=Action.CHAT, name=Action.CHAT.value),
+                    Choice(value=Action.SECRETS, name=Action.SECRETS.value),
+                    Choice(value=Action.EXIT, name=Action.EXIT.value),
                 ],
             ).execute()
 
-            if selected_action == "Start chat":
+            if selected_action == Action.CHAT:
                 started_event.wait(timeout=5)
                 while not stopped_event.is_set():
                     try:
@@ -199,7 +200,7 @@ def main():
                         return
                     except WebSocketConnectionClosedException:
                         return
-            elif selected_action == "Exit":
+            elif selected_action == Action.EXIT:
                 sys.exit(0)
     except KeyboardInterrupt:
         pass
