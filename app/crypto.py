@@ -9,7 +9,6 @@ from cryptography.exceptions import InvalidSignature
 from cryptography.hazmat.primitives import hashes, padding
 from cryptography.hazmat.primitives.ciphers import Cipher, algorithms, modes
 from cryptography.hazmat.primitives.hmac import HMAC
-from cryptography.hazmat.primitives.kdf.hkdf import HKDF
 from cryptography.hazmat.primitives.kdf.pbkdf2 import PBKDF2HMAC
 
 _KEY_SEED_LENGTH = 64
@@ -46,25 +45,14 @@ def base64_decode(input):
     return base64.urlsafe_b64decode(input)
 
 
-def derive_key_from_low_entropy(key_seed: str) -> bytes:
+def derive_key_from_low_entropy(key_seed: str, salt: str = None) -> bytes:
     kdf = PBKDF2HMAC(
         algorithm=hashes.SHA256(),
         length=_KEY_SEED_LENGTH,
-        salt=b"0" * 32,
+        salt=b"0" * 32 if salt is None else salt.encode(),
         iterations=390000,
     )
     key = kdf.derive(key_seed.encode())
-    return key
-
-
-def derive_key_from_high_entropy(key_seed: bytes) -> bytes:
-    kdf = HKDF(
-        algorithm=hashes.SHA256(),
-        length=_KEY_SEED_LENGTH,
-        salt=b"0" * 32,
-        info=b"high entropy seed",
-    )
-    key = kdf.derive(key_seed)
     return key
 
 

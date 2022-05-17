@@ -6,13 +6,13 @@ processor = MessageProcessor()
 
 def test_encryption_without_key():
     message = b"Encrypt me"
-    processor.shared_secret = None
+    processor.secret = None
     token = processor.process_outbound(message=message)
     assert token == message
 
 
 def test_encryption_with_no_associated_data():
-    processor.shared_secret = "My super secret"
+    processor.secret = "My super secret"
     token = processor.process_outbound(message="Encrypt me")
     # print(token)
     assert token is not None
@@ -20,7 +20,7 @@ def test_encryption_with_no_associated_data():
 
 def test_encryption_with_associated_data():
     associated_data = b"jdoe"
-    processor.shared_secret = "My super secret"
+    processor.secret = "My super secret"
     token = processor.process_outbound(
         message="Encrypt me", associated_data=associated_data
     )
@@ -32,7 +32,7 @@ def test_encryption_with_associated_data():
 
 def test_decryption_with_no_associated_data():
     message = b"Encrypt me"
-    processor.shared_secret = b"My super secret"
+    processor.secret = "My super secret"
     token = processor.process_outbound(message=message)
     processor.process_inbound(message=token)
 
@@ -40,7 +40,7 @@ def test_decryption_with_no_associated_data():
 def test_decryption_with_associated_data():
     message = b"Encrypt me"
     associated_data = b"jdoe"
-    processor.shared_secret = b"My super secret"
+    processor.secret = "My super secret"
     token = processor.process_outbound(message=message, associated_data=associated_data)
     print(token)
     processor.process_inbound(message=token)

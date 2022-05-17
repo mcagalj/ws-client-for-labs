@@ -24,6 +24,7 @@ import code
 import sys
 import threading
 from argparse import RawTextHelpFormatter
+from collections import namedtuple
 from enum import Enum
 
 from InquirerPy import inquirer
@@ -31,6 +32,9 @@ from InquirerPy.base.control import Choice
 from InquirerPy.separator import Separator
 from tabulate import tabulate
 from websocket import WebSocketApp, WebSocketConnectionClosedException
+
+from app.crypto import base64_decode
+from app.message_processor import MessageProcessor
 
 
 # Terminal color definitions
@@ -98,9 +102,10 @@ def parse_args():
 
 class Action(Enum):
     CHAT = "Start chat"
-    SECRETS = "Manage secrets"
-    SHOW_SECRETS = "Show secrets"
-    ADD_SECRET = "Add/update a secret"
+    USERS = "Manage users"
+    SHOW_USERS = "Show users"
+    ADD_USER = "Add/update a user (her secret)"
+    DELETE_USER = "Remove a user"
     EXIT = "Exit"
 
 
@@ -132,6 +137,11 @@ console = InteractiveConsole()
 
 def on_message(ws, message):
     console.write(message)
+    # print(message.split(":")[-1].strip().split(".")[0])
+    # try:
+    #     print(base64_decode(message.split(":")[-1].strip().split(".")[0]))
+    # except Exception as err:
+    #     print(err)
 
 
 def on_error(ws, error, stopped_event):
@@ -148,10 +158,102 @@ def on_close(ws, stopped_event):
     print(fg.RED + "### connection closed ###" + fg.RESET)
 
 
+def do_start_chat(_):
+    processor = _.users.get(_.nickname)
+
+    while not _.stopped_event.is_set():
+        try:
+            message = _.console.read()
+            if processor is not None:
+                message = processor.process_outbound(
+                    message=message, associated_data=_.nickname
+                )
+            _.ws.send(message)
+        except KeyboardInterrupt:
+            break
+        except EOFError:
+            return
+        except WebSocketConnectionClosedException:
+            return
+
+
+def do_manage_users(_):
+    while not _.stopped_event.is_set():
+        try:
+            breadcrumb = f"{_.breadcrumb} > {Action.USERS.value}"
+            action = inquirer.select(
+                message="Select your action:",
+                choices=[
+                    Separator(line=f"----- {breadcrumb} -----"),
+                    Choice(
+                        value=Action.ADD_USER,
+                        name=Action.ADD_USER.value,
+                    ),
+                    Choice(
+                        value=Action.SHOW_USERS,
+                        name=Action.SHOW_USERS.value,
+                    ),
+                    Choice(
+                        value=Action.DELETE_USER,
+                        name=Action.DELETE_USER.value,
+                    ),
+                    Choice(value=Action.EXIT, name=Action.EXIT.value),
+                ],
+            ).execute()
+
+            if action == Action.ADD_USER:
+                breadcrumb = f"{breadcrumb} > {Action.ADD_USER.value}"
+                print(Separator(line=f"----- {breadcrumb} -----"))
+                username = (
+                    inquirer.text(message="Enter a user nickname:").execute().strip()
+                )
+                secret = (
+                    inquirer.secret(message=f"Enter a secret for client '{username}':")
+                    .execute()
+                    .strip()
+                )
+
+                if _.users.get(username) is not None:
+                    _.users.get(username).shared_secret = secret
+                else:
+                    _.users.update(
+                        {username: MessageProcessor(secret=secret, username=username)}
+                    )
+
+            elif action == Action.DELETE_USER:
+                breadcrumb = f"{breadcrumb} > {Action.ADD_USER.value}"
+                print(Separator(line=f"----- {breadcrumb} -----"))
+                username = (
+                    inquirer.text(message="Enter a nickname you want to delete:")
+                    .execute()
+                    .strip()
+                )
+                _.users.pop(username, None)
+
+            elif action == Action.SHOW_USERS:
+                table = [[c, s] for c, s in _.users.items()]
+                print(
+                    tabulate(
+                        table,
+                        headers=["Client name", "Message processor"],
+                        tablefmt="fancy_grid",
+                    )
+                )
+            elif action == Action.EXIT:
+                break
+        except KeyboardInterrupt:
+            break
+
+
+def parse_nickname(url):
+    return url.split("/")[-1]
+
+
 def main():
     args = parse_args()
+    nickname = parse_nickname(args.url)
     header = {}
-    secrets = {}
+    users = {}  # holds users and their message processors
 
     print(fg.RED + "Press Ctrl+C to quit" + fg.RESET)
     print(fg.GREEN + "Connecting to server. Please wait ..." + fg.RESET)
@@ -172,84 +274,43 @@ def main():
     thread.daemon = True
     thread.start()
 
+    started_event.wait(timeout=5)
+
     try:
-        while True:
+        breadcrumb = "Main menu"
+        ChatRefs = namedtuple(
+            "ChatRefs",
+            ["nickname", "users", "stopped_event", "console", "ws"],
+        )
+        chatsRefs = ChatRefs(
+            nickname=nickname,
+            users=users,
+            stopped_event=stopped_event,
+            console=console,
+            ws=ws,
+        )
+        UsersRefs = namedtuple("UsersRefs", ["users", "breadcrumb", "stopped_event"])
+        userRefs = UsersRefs(
+            users=users,
+            breadcrumb=breadcrumb,
+            stopped_event=stopped_event,
+        )
+
+        while not stopped_event.is_set():
             action = inquirer.select(
                 message="Select your action:",
                 choices=[
-                    Separator(line=f"----- Main menu -----"),
+                    Separator(line=f"----- {breadcrumb} -----"),
                     Choice(value=Action.CHAT, name=Action.CHAT.value),
-                    Choice(value=Action.SECRETS, name=Action.SECRETS.value),
+                    Choice(value=Action.USERS, name=Action.USERS.value),
                     Choice(value=Action.EXIT, name=Action.EXIT.value),
                 ],
             ).execute()
 
             if action == Action.CHAT:
-                started_event.wait(timeout=5)
-                while not stopped_event.is_set():
-                    try:
-                        message = console.read()
-                        # message = b64encode(message)
-                        ws.send(message)
-                    except KeyboardInterrupt:
-                        break
-                    except EOFError:
-                        return
-                    except WebSocketConnectionClosedException:
-                        return
-            elif action == Action.SECRETS:
-                while True:
-                    try:
-                        action_secrets = inquirer.select(
-                            message="Select your action:",
-                            choices=[
-                                Separator(
-                                    line=f"----- Main menu > {Action.SECRETS.value} -----"
-                                ),
-                                Choice(
-                                    value=Action.ADD_SECRET,
-                                    name=Action.ADD_SECRET.value,
-                                ),
-                                Choice(
-                                    value=Action.SHOW_SECRETS,
-                                    name=Action.SHOW_SECRETS.value,
-                                ),
-                                Choice(value=Action.EXIT, name=Action.EXIT.value),
-                            ],
-                        ).execute()
-
-                        if action_secrets == Action.ADD_SECRET:
-                            print(
-                                Separator(
-                                    line=f"----- Main menu > {Action.SECRETS.value} > {Action.ADD_SECRET.value} -----"
-                                )
-                            )
-                            username = (
-                                inquirer.text(message="Enter a client name:")
-                                .execute()
-                                .strip()
-                            )
-                            secret = (
-                                inquirer.secret(
-                                    message=f"Enter a secret for client '{username}':"
-                                )
-                                .execute()
-                                .strip()
-                            )
-                            secrets.update({username: secret})
-                        elif action_secrets == Action.SHOW_SECRETS:
-                            table = [[c, s] for c, s in secrets.items()]
-                            print(
-                                tabulate(
-                                    table,
-                                    headers=["Client name", "Secret"],
-                                    tablefmt="fancy_grid",
-                                )
-                            )
-                        elif action_secrets == Action.EXIT:
-                            break
-                    except KeyboardInterrupt:
-                        break
+                do_start_chat(chatsRefs)
+            elif action == Action.USERS:
+                do_manage_users(userRefs)
             elif action == Action.EXIT:
                 sys.exit(0)
     except KeyboardInterrupt:

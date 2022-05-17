@@ -1,36 +1,35 @@
 import typing
 
-from app.crypto import (
-    AuthenticatedEncryption,
-    derive_key_from_high_entropy,
-    derive_key_from_low_entropy,
-)
+from app.crypto import AuthenticatedEncryption, derive_key_from_low_entropy
 
 
 class MessageProcessor:
-    def __init__(self, shared_secret: typing.Union[str, bytes, None] = None) -> None:
-        self.shared_secret = shared_secret
+    def __init__(
+        self, secret: typing.Union[str, bytes, None] = None, username: str = None
+    ) -> None:
+        self.username = username
+        self.secret = secret
+
+    def __str__(self):
+        return f"Message processor for {self.username} ({id(self)})"
 
     @property
-    def shared_secret(self):
-        raise AttributeError("The shared_secret is write-only.")
+    def secret(self):
+        raise AttributeError("The secret is write-only.")
 
-    @shared_secret.setter
-    def shared_secret(self, shared_secret: typing.Union[str, bytes, None]) -> None:
-        if shared_secret is None:
+    @secret.setter
+    def secret(self, secret: typing.Union[str, bytes, None]) -> None:
+        if secret is None:
             self._key = None
             self._aead = None
-        elif isinstance(shared_secret, str):
-            self._key = derive_key_from_low_entropy(shared_secret)
-            self._aead = AuthenticatedEncryption(self._key)
-        elif isinstance(shared_secret, bytes):
-            self._key = derive_key_from_high_entropy(shared_secret)
+        elif isinstance(secret, str):
+            self._key = derive_key_from_low_entropy(key_seed=secret, salt=self.username)
             self._aead = AuthenticatedEncryption(self._key)
         else:
-            raise TypeError("The shared_secred must be either str, bytes or None.")
+            raise TypeError("The secret must be str.")
 
     def process_inbound(self, message: str) -> str:
-        plaintext = self._aead.decrypt(token=message)
+        return self._aead.decrypt(token=message)
 
     def process_outbound(
         self,
