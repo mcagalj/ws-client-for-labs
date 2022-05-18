@@ -1,6 +1,6 @@
 import typing
 
-from app.crypto import AuthenticatedEncryption, derive_key_from_low_entropy
+from .crypto import AuthenticatedEncryption, derive_key_from_low_entropy
 
 
 class MessageProcessor:

@@ -1,5 +1,5 @@
 from app.crypto import base64_decode
-from app.message_processor import MessageProcessor
+from app.processor import MessageProcessor
 
 processor = MessageProcessor()
 

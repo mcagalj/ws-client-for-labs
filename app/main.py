@@ -24,17 +24,17 @@ import code
 import sys
 import threading
 from argparse import RawTextHelpFormatter
-from collections import namedtuple
 from enum import Enum
 
 from InquirerPy import inquirer
 from InquirerPy.base.control import Choice
 from InquirerPy.separator import Separator
+from InquirerPy.validator import EmptyInputValidator
 from tabulate import tabulate
 from websocket import WebSocketApp, WebSocketConnectionClosedException
 
-from app.crypto import base64_decode
-from app.message_processor import MessageProcessor
+from .processor import MessageProcessor
+from .utils import base64_decode
 
 
 # Terminal color definitions
@@ -62,46 +62,8 @@ class Secure(Enum):
     ECDHE = "ecdhe"
 
 
-def get_encoding():
-    encoding = getattr(sys.stdin, "encoding", "")
-    if not encoding:
-        return "utf-8"
-    else:
-        return encoding.lower()
-
-
-ENCODING = get_encoding()
-
-
-def parse_args():
-    parser = argparse.ArgumentParser(
-        formatter_class=RawTextHelpFormatter, description="WebSocket Simple Chat"
-    )
-    parser.add_argument(
-        "url",
-        metavar="WS_URL",
-        help="websocket url (eg. ws://10.0.2.4/ws/<client_id>)",
-    )
-
-    # parser.add_argument(
-    #     "-s",
-    #     "--secure",
-    #     action="store",
-    #     choices=["pass", "ecdhe"],
-    #     help="Secure outbound messages.\n\n"
-    #     "OPTIONS:\n"
-    #     "{pass} - use a shared password to derive required secret keys.\n"
-    #     "The password is provided through an environment variable WS_PASSWORD.\n\n"
-    #     "{ecdhe} - use ephemeral elliptic curve Diffie-Hellman to establish secret keys.\n"
-    #     "Diffie-Hellman ephemeral keys are signed by an appropriate elliptic curve-based signature algorithm ECDSA.\n"
-    #     "Signature verification public keys are loaded from a YAML file settings.yaml.",
-    # )
-
-    return parser.parse_args()
-
-
 class Action(Enum):
-    CHAT = "Start chat"
+    CHAT = "Talk to others"
     USERS = "Manage users"
     SHOW_USERS = "Show users"
     ADD_USER = "Add/update a user (her secret)"
@@ -112,13 +74,21 @@ class Action(Enum):
 class RawInput:
     def raw_input(self, prompt):
         line = input(prompt)
-
+        ENCODING = RawInput.get_encoding()
         if ENCODING and ENCODING != "utf-8" and not isinstance(line, str):
             line = line.decode(ENCODING).encode("utf-8")
         elif isinstance(line, str):
             line = line.encode("utf-8")
 
         return line
+
+    @staticmethod
+    def get_encoding():
+        encoding = getattr(sys.stdin, "encoding", "")
+        if not encoding:
+            return "utf-8"
+        else:
+            return encoding.lower()
 
 
 class InteractiveConsole(RawInput, code.InteractiveConsole):
@@ -133,6 +103,19 @@ class InteractiveConsole(RawInput, code.InteractiveConsole):
 
 
 console = InteractiveConsole()
+
+
+def parse_args():
+    parser = argparse.ArgumentParser(
+        formatter_class=RawTextHelpFormatter,
+        description="WebSocket Simple Chat",
+    )
+    parser.add_argument(
+        "url",
+        metavar="WS_URL",
+        help="websocket url (eg. ws://10.0.2.4/ws/<client_id>)",
+    )
+    return parser.parse_args()
 
 
 def on_message(ws, message):
@@ -151,6 +134,7 @@ def on_error(ws, error, stopped_event):
 
 def on_open(ws, started_event):
     started_event.set()
+    print(fg.GREEN + "Successfully connected to the server.\n" + fg.RESET)
 
 
 def on_close(ws, stopped_event):
@@ -158,17 +142,24 @@ def on_close(ws, stopped_event):
     print(fg.RED + "### connection closed ###" + fg.RESET)
 
 
-def do_start_chat(_):
-    processor = _.users.get(_.nickname)
+def do_start_chat(**kwargs):
+    nickname = kwargs.get("nickname")
+    users = kwargs.get("users")
+    stopped_event = kwargs.get("stopped_event")
+    console = kwargs.get("console")
+    ws = kwargs.get("ws")
 
-    while not _.stopped_event.is_set():
+    processor = users.get(nickname)
+
+    while not stopped_event.is_set():
         try:
-            message = _.console.read()
+            message = console.read()
             if processor is not None:
                 message = processor.process_outbound(
-                    message=message, associated_data=_.nickname
+                    message=message,
+                    associated_data=nickname,
                 )
-            _.ws.send(message)
+            ws.send(message)
         except KeyboardInterrupt:
             break
         except EOFError:
@@ -177,14 +168,26 @@ def do_start_chat(_):
             return
 
 
-def do_manage_users(_):
-    while not _.stopped_event.is_set():
+def _separator(items):
+    if isinstance(items, str):
+        return Separator(line=f"----- {items} -----")
+    elif isinstance(items, list):
+        breadcrumb = " > ".join(items)
+        print(Separator(line=f"----- {breadcrumb} -----"))
+
+
+def do_manage_users(**kwargs):
+    breadcrumb_root = kwargs.get("breadcrumb")
+    stopped_event = kwargs.get("stopped_event")
+    users = kwargs.get("users")
+
+    while not stopped_event.is_set():
         try:
-            breadcrumb = f"{_.breadcrumb} > {Action.USERS.value}"
+            breadcrumb = f"{breadcrumb_root} > {Action.USERS.value}"
             action = inquirer.select(
                 message="Select your action:",
                 choices=[
-                    Separator(line=f"----- {breadcrumb} -----"),
+                    _separator(breadcrumb),
                     Choice(
                         value=Action.ADD_USER,
                         name=Action.ADD_USER.value,
@@ -197,44 +200,60 @@ def do_manage_users(_):
                         value=Action.DELETE_USER,
                         name=Action.DELETE_USER.value,
                     ),
-                    Choice(value=Action.EXIT, name=Action.EXIT.value),
+                    Choice(
+                        value=Action.EXIT,
+                        name=Action.EXIT.value,
+                    ),
                 ],
             ).execute()
 
             if action == Action.ADD_USER:
-                breadcrumb = f"{breadcrumb} > {Action.ADD_USER.value}"
-                print(Separator(line=f"----- {breadcrumb} -----"))
-                username = (
-                    inquirer.text(message="Enter a user nickname:").execute().strip()
-                )
-                secret = (
-                    inquirer.secret(message=f"Enter a secret for client '{username}':")
-                    .execute()
-                    .strip()
-                )
-
-                if _.users.get(username) is not None:
-                    _.users.get(username).shared_secret = secret
-                else:
-                    _.users.update(
-                        {username: MessageProcessor(secret=secret, username=username)}
+                try:
+                    _separator([breadcrumb, Action.ADD_USER.value])
+                    username = (
+                        inquirer.text(
+                            message="Enter a user nickname:",
+                            validate=EmptyInputValidator(),
+                        )
+                        .execute()
+                        .strip()
+                    )
+                    secret = (
+                        inquirer.secret(
+                            message=f"Enter a secret for user '{username}':",
+                            validate=EmptyInputValidator(),
+                        )
+                        .execute()
+                        .strip()
                     )
 
+                    if users.get(username) is not None:
+                        users.get(username).shared_secret = secret
+                    else:
+                        users.update(
+                            {
+                                username: MessageProcessor(
+                                    secret=secret, username=username
+                                )
+                            }
+                        )
+                except KeyboardInterrupt:
+                    pass
             elif action == Action.DELETE_USER:
-                breadcrumb = f"{breadcrumb} > {Action.ADD_USER.value}"
-                print(Separator(line=f"----- {breadcrumb} -----"))
-                username = (
-                    inquirer.text(message="Enter a nickname you want to delete:")
-                    .execute()
-                    .strip()
-                )
-                _.users.pop(username, None)
-
+                try:
+                    _separator([breadcrumb, Action.DELETE_USER.value])
+                    username = (
+                        inquirer.text(message="Enter a nickname you want to delete:")
+                        .execute()
+                        .strip()
+                    )
+                    users.pop(username, None)
+                except KeyboardInterrupt:
+                    pass
             elif action == Action.SHOW_USERS:
-                table = [[c, s] for c, s in _.users.items()]
                 print(
                     tabulate(
-                        table,
+                        [[c, s] for c, s in users.items()],
                         headers=["Client name", "Message processor"],
                         tablefmt="fancy_grid",
                     )
@@ -252,8 +271,7 @@ def parse_nickname(url):
 def main():
     args = parse_args()
     nickname = parse_nickname(args.url)
-    header = {}
-    users = {}  # holds users and their message processors
+    users = {}  # holds references to users's message processors
 
     print(fg.RED + "Press Ctrl+C to quit" + fg.RESET)
     print(fg.GREEN + "Connecting to server. Please wait ..." + fg.RESET)
@@ -263,7 +281,7 @@ def main():
 
     ws = WebSocketApp(
         url=args.url,
-        header=header,
+        header={},
         on_message=on_message,
         on_open=lambda ws: on_open(ws, started_event),
         on_error=lambda ws, error: on_error(ws, error, stopped_event),
@@ -278,29 +296,11 @@ def main():
 
     try:
         breadcrumb = "Main menu"
-        ChatRefs = namedtuple(
-            "ChatRefs",
-            ["nickname", "users", "stopped_event", "console", "ws"],
-        )
-        chatsRefs = ChatRefs(
-            nickname=nickname,
-            users=users,
-            stopped_event=stopped_event,
-            console=console,
-            ws=ws,
-        )
-        UsersRefs = namedtuple("UsersRefs", ["users", "breadcrumb", "stopped_event"])
-        userRefs = UsersRefs(
-            users=users,
-            breadcrumb=breadcrumb,
-            stopped_event=stopped_event,
-        )
-
         while not stopped_event.is_set():
             action = inquirer.select(
                 message="Select your action:",
                 choices=[
-                    Separator(line=f"----- {breadcrumb} -----"),
+                    _separator(breadcrumb),
                     Choice(value=Action.CHAT, name=Action.CHAT.value),
                     Choice(value=Action.USERS, name=Action.USERS.value),
                     Choice(value=Action.EXIT, name=Action.EXIT.value),
@@ -308,9 +308,19 @@ def main():
             ).execute()
 
             if action == Action.CHAT:
-                do_start_chat(chatsRefs)
+                do_start_chat(
+                    nickname=nickname,
+                    users=users,
+                    stopped_event=stopped_event,
+                    console=console,
+                    ws=ws,
+                )
             elif action == Action.USERS:
-                do_manage_users(userRefs)
+                do_manage_users(
+                    users=users,
+                    breadcrumb=breadcrumb,
+                    stopped_event=stopped_event,
+                )
             elif action == Action.EXIT:
                 sys.exit(0)
     except KeyboardInterrupt:

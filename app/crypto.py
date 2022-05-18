@@ -1,4 +1,3 @@
-import base64
 import binascii
 import os
 import time
@@ -11,38 +10,11 @@ from cryptography.hazmat.primitives.ciphers import Cipher, algorithms, modes
 from cryptography.hazmat.primitives.hmac import HMAC
 from cryptography.hazmat.primitives.kdf.pbkdf2 import PBKDF2HMAC
 
+from app.utils import base64_decode, base64_encode, check_bytes, check_string
+
 _KEY_SEED_LENGTH = 64
 _MSG_TTL = 60
 _TOKEN_DELIMITER = "."
-
-
-def check_string(name: str, value: str) -> None:
-    if not isinstance(value, str):
-        raise TypeError(f"{name} must be str")
-
-
-def check_bytes(name: str, value: bytes) -> None:
-    if not isinstance(value, bytes):
-        raise TypeError(f"{name} must be bytes")
-
-
-def base64_encode(input: bytes) -> str:
-    """
-    url-safe encodes and reemoves any `=` used as padding from the encoded input.
-    https://gist.github.com/cameronmaske/f520903ade824e4c30ab
-    """
-    encoded = base64.urlsafe_b64encode(input).decode()
-    return encoded.rstrip("=")
-
-
-def base64_decode(input):
-    """
-    Adds back in the required padding before decoding.
-    https://gist.github.com/cameronmaske/f520903ade824e4c30ab
-    """
-    padding = 4 - (len(input) % 4)
-    input = input + ("=" * padding)
-    return base64.urlsafe_b64decode(input)
 
 
 def derive_key_from_low_entropy(key_seed: str, salt: str = None) -> bytes:
@@ -145,7 +117,6 @@ class AuthenticatedEncryption:
             associated_data = (
                 base64_decode(token.associated_data) if associated_data else None
             )
-
             timestamp = base64_decode(token.timestamp)
             iv = base64_decode(token.iv)
             ciphertext = base64_decode(token.ciphertext)
