@@ -13,6 +13,7 @@ from .schemas import Message, Token, TokenAssociatedData
 from .utils import base64_decode, base64_encode, check_bytes, check_string
 
 _KEY_SEED_LENGTH = 64
+_KEY_LENGTH = 32
 _MSG_TTL = 60
 _TOKEN_DELIMITER = "."
 
@@ -41,8 +42,22 @@ class AuthenticatedEncryption:
         if len(key) != _KEY_SEED_LENGTH:
             raise ValueError(f"The key must be exactly {_KEY_SEED_LENGTH} bytes long.")
 
-        self._signing_key = key[:32]
-        self._encryption_key = key[32:]
+        self._signing_key = key[:_KEY_LENGTH]
+        self._encryption_key = key[_KEY_LENGTH:]
+
+    @property
+    def key(self):
+        raise AttributeError("The secret is write-only.")
+
+    @key.setter
+    def key(self, value: bytes) -> None:
+        if not isinstance(value, bytes):
+            raise TypeError("The key must be bytes.")
+        if len(value) != _KEY_SEED_LENGTH:
+            raise ValueError(f"The key must be exactly {_KEY_SEED_LENGTH} bytes long.")
+        self._signing_key = value[:_KEY_LENGTH]
+        self._encryption_key = value[_KEY_LENGTH:]
+        print(self._encryption_key)
 
     def encrypt(
         self,

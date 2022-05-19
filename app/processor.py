@@ -12,6 +12,8 @@ class MessageProcessor:
     ) -> None:
         self.username = username
         self.secret = secret
+        self.N_out = 0
+        self.N_in = 0
 
     def __str__(self):
         return f"Message processor for {self.username} ({id(self)})"
@@ -47,3 +49,6 @@ class MessageProcessor:
             token = message
 
         return token
+
+    def _update_secret(self):
+        pass
