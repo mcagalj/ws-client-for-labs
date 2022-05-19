@@ -2,7 +2,6 @@ import binascii
 import os
 import time
 import typing
-from collections import namedtuple
 
 from cryptography.exceptions import InvalidSignature
 from cryptography.hazmat.primitives import hashes, padding
@@ -10,7 +9,8 @@ from cryptography.hazmat.primitives.ciphers import Cipher, algorithms, modes
 from cryptography.hazmat.primitives.hmac import HMAC
 from cryptography.hazmat.primitives.kdf.pbkdf2 import PBKDF2HMAC
 
-from app.utils import base64_decode, base64_encode, check_bytes, check_string
+from .schemas import Message, Token, TokenAssociatedData
+from .utils import base64_decode, base64_encode, check_bytes, check_string
 
 _KEY_SEED_LENGTH = 64
 _MSG_TTL = 60
@@ -32,19 +32,6 @@ class InvalidToken(Exception):
     pass
 
 
-Token = namedtuple("Token", ["timestamp", "iv", "ciphertext", "hmac"])
-TokenAD = namedtuple(
-    "Token",
-    [
-        "associated_data",
-        "timestamp",
-        "iv",
-        "ciphertext",
-        "hmac",
-    ],
-)
-
-
 class AuthenticatedEncryption:
     """
     Heavily inspired by Fernet (https://cryptography.io).
@@ -58,7 +45,9 @@ class AuthenticatedEncryption:
         self._encryption_key = key[32:]
 
     def encrypt(
-        self, plaintext: bytes, associated_data: typing.Union[bytes, None] = None
+        self,
+        plaintext: bytes,
+        associated_data: typing.Union[bytes, None] = None,
     ) -> bytes:
         check_bytes("plaintext", plaintext)
 
@@ -70,17 +59,10 @@ class AuthenticatedEncryption:
                 length=8, byteorder="big"
             )
 
-        iv = os.urandom(16)
         current_time = int(time.time())
         current_time = current_time.to_bytes(length=8, byteorder="big")
 
-        padder = padding.PKCS7(algorithms.AES.block_size).padder()
-        padded_data = padder.update(plaintext) + padder.finalize()
-        encryptor = Cipher(
-            algorithms.AES(self._encryption_key),
-            modes.CBC(iv),
-        ).encryptor()
-        ciphertext = encryptor.update(padded_data) + encryptor.finalize()
+        iv, ciphertext = self._encrypt(plaintext)
 
         basic_parts = current_time + iv + ciphertext
         basic_parts_encoded = [
@@ -104,6 +86,7 @@ class AuthenticatedEncryption:
     def decrypt(self, token: str) -> bytes:
         check_string("token", token)
         token_parts = token.split(_TOKEN_DELIMITER)
+
         token_parts_count = len(token_parts)
         if token_parts_count != 4 and token_parts_count != 5:
             raise InvalidToken
@@ -111,7 +94,9 @@ class AuthenticatedEncryption:
         try:
             associated_data = False if token_parts_count == 4 else True
             token = (
-                Token(*token_parts) if not associated_data else TokenAD(*token_parts)
+                Token(*token_parts)
+                if not associated_data
+                else TokenAssociatedData(*token_parts)
             )
 
             associated_data = (
@@ -135,6 +120,33 @@ class AuthenticatedEncryption:
             basic_parts = associated_data + basic_parts + associated_data_len
 
         self._verify_signature(data=basic_parts, hmac=hmac)
+        plaintext = self._decrypt(iv=iv, ciphertext=ciphertext)
+
+        return Message(
+            plaintext=plaintext,
+            associated_data=associated_data,
+        )
+
+    def _encrypt(self, plaintext: bytes) -> typing.Tuple[bytes, bytes]:
+        padder = padding.PKCS7(algorithms.AES.block_size).padder()
+        padded_data = padder.update(plaintext) + padder.finalize()
+        iv = os.urandom(16)
+        encryptor = Cipher(
+            algorithms.AES(self._encryption_key),
+            modes.CBC(iv),
+        ).encryptor()
+        ciphertext = encryptor.update(padded_data) + encryptor.finalize()
+        return iv, ciphertext
+
+    def _decrypt(self, iv: bytes, ciphertext: bytes) -> bytes:
+        decryptor = Cipher(
+            algorithms.AES(self._encryption_key),
+            modes.CBC(iv),
+        ).decryptor()
+        plaintext = decryptor.update(ciphertext) + decryptor.finalize()
+        unpadder = padding.PKCS7(algorithms.AES.block_size).unpadder()
+        plaintext = unpadder.update(plaintext) + unpadder.finalize()
+        return plaintext
 
     @staticmethod
     def _verify_timestamp(timestamp):

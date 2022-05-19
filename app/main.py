@@ -33,7 +33,9 @@ from InquirerPy.validator import EmptyInputValidator
 from tabulate import tabulate
 from websocket import WebSocketApp, WebSocketConnectionClosedException
 
+from .crypto import InvalidToken
 from .processor import MessageProcessor
+from .schemas import Message
 from .utils import base64_decode
 
 
@@ -118,13 +120,28 @@ def parse_args():
     return parser.parse_args()
 
 
-def on_message(ws, message):
-    console.write(message)
-    # print(message.split(":")[-1].strip().split(".")[0])
-    # try:
-    #     print(base64_decode(message.split(":")[-1].strip().split(".")[0]))
-    # except Exception as err:
-    #     print(err)
+def on_message(ws, message, users):
+    try:
+        token = message.split(":")[-1].strip()
+        username = base64_decode(token.split(".")[0]).decode()
+        processor = users.get(username)
+
+        if processor is not None:
+            processed_message = processor.process_inbound(token)
+            console.write(
+                fg.RED
+                + f"#{username}: "
+                + fg.RESET
+                + processed_message.plaintext.decode()
+            )
+        else:
+            console.write(message)
+
+    except InvalidToken:
+        console.write(fg.RED + f"#{username}: Invalid Token" + fg.RESET)
+        return
+    except Exception:
+        console.write(message)
 
 
 def on_error(ws, error, stopped_event):
@@ -143,21 +160,23 @@ def on_close(ws, stopped_event):
 
 
 def do_start_chat(**kwargs):
-    nickname = kwargs.get("nickname")
+    username = kwargs.get("username")
     users = kwargs.get("users")
     stopped_event = kwargs.get("stopped_event")
     console = kwargs.get("console")
     ws = kwargs.get("ws")
 
-    processor = users.get(nickname)
+    processor = users.get(username)
 
     while not stopped_event.is_set():
         try:
             message = console.read()
             if processor is not None:
                 message = processor.process_outbound(
-                    message=message,
-                    associated_data=nickname,
+                    Message(
+                        plaintext=message,
+                        associated_data=username,
+                    )
                 )
             ws.send(message)
         except KeyboardInterrupt:
@@ -212,7 +231,7 @@ def do_manage_users(**kwargs):
                     _separator([breadcrumb, Action.ADD_USER.value])
                     username = (
                         inquirer.text(
-                            message="Enter a user nickname:",
+                            message="Enter a user username:",
                             validate=EmptyInputValidator(),
                         )
                         .execute()
@@ -228,7 +247,7 @@ def do_manage_users(**kwargs):
                     )
 
                     if users.get(username) is not None:
-                        users.get(username).shared_secret = secret
+                        users.get(username).secret = secret
                     else:
                         users.update(
                             {
@@ -243,7 +262,7 @@ def do_manage_users(**kwargs):
                 try:
                     _separator([breadcrumb, Action.DELETE_USER.value])
                     username = (
-                        inquirer.text(message="Enter a nickname you want to delete:")
+                        inquirer.text(message="Enter a username you want to delete:")
                         .execute()
                         .strip()
                     )
@@ -254,7 +273,7 @@ def do_manage_users(**kwargs):
                 print(
                     tabulate(
                         [[c, s] for c, s in users.items()],
-                        headers=["Client name", "Message processor"],
+                        headers=["Client name", "Secret"],
                         tablefmt="fancy_grid",
                     )
                 )
@@ -264,13 +283,13 @@ def do_manage_users(**kwargs):
             break
 
 
-def parse_nickname(url):
+def parse_username(url):
     return url.split("/")[-1]
 
 
 def main():
     args = parse_args()
-    nickname = parse_nickname(args.url)
+    username = parse_username(args.url)
     users = {}  # holds references to users's message processors
 
     print(fg.RED + "Press Ctrl+C to quit" + fg.RESET)
@@ -282,7 +301,7 @@ def main():
     ws = WebSocketApp(
         url=args.url,
         header={},
-        on_message=on_message,
+        on_message=lambda ws, message: on_message(ws, message, users),
         on_open=lambda ws: on_open(ws, started_event),
         on_error=lambda ws, error: on_error(ws, error, stopped_event),
         on_close=lambda ws, *_: on_close(ws, stopped_event),
@@ -309,7 +328,7 @@ def main():
 
             if action == Action.CHAT:
                 do_start_chat(
-                    nickname=nickname,
+                    username=username,
                     users=users,
                     stopped_event=stopped_event,
                     console=console,

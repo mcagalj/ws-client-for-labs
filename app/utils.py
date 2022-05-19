@@ -20,7 +20,7 @@ def base64_encode(input: bytes) -> str:
     return encoded.rstrip("=")
 
 
-def base64_decode(input):
+def base64_decode(input: str) -> bytes:
     """
     Adds back in the required padding before decoding.
     https://gist.github.com/cameronmaske/f520903ade824e4c30ab
