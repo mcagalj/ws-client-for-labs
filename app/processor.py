@@ -1,6 +1,4 @@
-import json
 import typing
-from itertools import count
 
 from .crypto import (
     AuthenticatedEncryption,
@@ -32,6 +30,9 @@ class MessageProcessor:
 
     @secret.setter
     def secret(self, value: typing.Union[str, bytes, None]) -> None:
+        self._N_out = 0
+        self._N_in = 0
+
         if value is None:
             self._key = None
             self._aead = None
@@ -47,25 +48,26 @@ class MessageProcessor:
             raise TypeError("The secret must be str or bytes.")
 
     def process_inbound(self, message: str) -> Message:
-        counter = int.from_bytes(base64_decode(message.split(".")[0])[:8], "big")
-        current_key = self._key
-        current_N_in = self._N_in
-        while self._N_in < counter:
-            self._N_in += 1
-            self._update_keys()
-        try:
-            message = self._aead.decrypt(token=message)
-            message.associated_data = message.associated_data[8:]
-            return message
-        except InvalidToken:
-            self._key = current_key
-            self._N_in = current_N_in
-            raise InvalidToken
+        counter = MessageProcessor._get_message_counter(message)
+
+        print(f"Received {counter} (local {self._N_in})")
+
+        saved_key = self._key
+        saved_counter = self._N_in
+
+        self._skip_message_keys(until=counter)
+        message = self._try_skipped_message_keys(
+            message=message,
+            saved_key=saved_key,
+            saved_counter=saved_counter,
+        )
+
+        return message
 
     def process_outbound(self, message: Message) -> bytes:
         try:
             self._update_keys()
-            message = self._update_message_counter(message)
+            message = self._set_message_counter(message)
             token = self._aead.encrypt(
                 plaintext=message.plaintext,
                 associated_data=message.associated_data,
@@ -84,7 +86,7 @@ class MessageProcessor:
         self._chain_key = key[:32]
         self._aead.key = key[32:]
 
-    def _update_message_counter(self, message: Message) -> Message:
+    def _set_message_counter(self, message: Message) -> Message:
         self._N_out += 1
         associated_data = self._N_out.to_bytes(8, "big")
         if message.associated_data is not None:
@@ -94,3 +96,30 @@ class MessageProcessor:
             plaintext=message.plaintext,
             associated_data=associated_data,
         )
+
+    @staticmethod
+    def _get_message_counter(token: str) -> int:
+        return int.from_bytes(base64_decode(token.split(".")[0])[:8], "big")
+
+    def _skip_message_keys(self, until: int) -> None:
+        while self._N_in < until:
+            self._update_keys()
+            self._N_in += 1
+
+    def _try_skipped_message_keys(
+        self,
+        message: Message,
+        saved_key: bytes,
+        saved_counter: int,
+    ) -> Message:
+        try:
+            message = self._aead.decrypt(token=message)
+            message.associated_data = message.associated_data[8:]
+            return message
+        except InvalidToken:
+            # Reset keys back to original values
+            self._key = saved_key
+            self._N_in = saved_counter
+            self._chain_key = self._key[:32]
+            self._aead.key = self._key[32:]
+            raise InvalidToken

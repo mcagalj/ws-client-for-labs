@@ -61,6 +61,53 @@ def test_decryption_with_associated_data():
     assert associated_data == decrypted_message._associated_data
 
 
+def test_password_reset():
+    processor_s = MessageProcessor(secret="secret")
+    processor_r = MessageProcessor(secret="secret")
+
+    plaintext = b"Encrypt me"
+    associated_data = b"jdoe"
+    token = processor_s.process_outbound(
+        message=Message(
+            plaintext=plaintext,
+            associated_data=associated_data,
+        )
+    )
+    decrypted_message = processor_r.process_inbound(message=token)
+    assert decrypted_message.plaintext == plaintext
+    assert associated_data == decrypted_message._associated_data
+
+    processor_s.secret = "secret 1"
+    processor_r.secret = "secret 1"
+
+    token = processor_s.process_outbound(
+        message=Message(
+            plaintext=plaintext,
+            associated_data=associated_data,
+        )
+    )
+    decrypted_message = processor_r.process_inbound(message=token)
+    assert decrypted_message.plaintext == plaintext
+    assert associated_data == decrypted_message._associated_data
+
+
+def test_invalid_token():
+    processor_1 = MessageProcessor(secret="secret 1")
+    processor_2 = MessageProcessor(secret="secret 2")
+
+    plaintext = b"Encrypt me"
+    associated_data = b"jdoe"
+    token = processor_1.process_outbound(
+        message=Message(
+            plaintext=plaintext,
+            associated_data=associated_data,
+        )
+    )
+
+    with pytest.raises(InvalidToken):
+        processor_2.process_inbound(token)
+
+
 def test_decryption_with_desynchronized_message_counters():
     processor_s = MessageProcessor(secret="secret")
     processor_r = MessageProcessor(secret="secret")
@@ -92,13 +139,15 @@ def test_decryption_with_desynchronized_message_counters():
     assert associated_data == decrypted_message._associated_data
 
 
-def test_invalid_token():
-    processor_1 = MessageProcessor(secret="secret 1")
-    processor_2 = MessageProcessor(secret="secret 2")
+def test_decryption_with_desynchronized_message_counters_2():
+    processor_s_1 = MessageProcessor(secret="secret 1")
+    processor_s_2 = MessageProcessor(secret="secret")
+    processor_r = MessageProcessor(secret="secret")
 
     plaintext = b"Encrypt me"
     associated_data = b"jdoe"
-    token = processor_1.process_outbound(
+
+    token = processor_s_1.process_outbound(
         message=Message(
             plaintext=plaintext,
             associated_data=associated_data,
@@ -106,7 +155,18 @@ def test_invalid_token():
     )
 
     with pytest.raises(InvalidToken):
-        processor_2.process_inbound(token)
+        processor_r.process_inbound(message=token)
+
+    token = processor_s_2.process_outbound(
+        message=Message(
+            plaintext=plaintext,
+            associated_data=associated_data,
+        )
+    )
+
+    decrypted_message = processor_r.process_inbound(message=token)
+    assert decrypted_message.plaintext == plaintext
+    assert associated_data == decrypted_message._associated_data
 
 
 def test_forward_secrecy():

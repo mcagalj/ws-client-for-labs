@@ -121,12 +121,10 @@ def parse_args():
 
 
 def on_message(ws, message, users):
-    print(message)
     try:
         token = message.split(":")[-1].strip()
         # username = base64_decode(token.split(".")[0]).decode()
         username = base64_decode(token.split(".")[0])[8:].decode()
-        print(username)
         processor = users.get(username)
 
         if processor is not None:
