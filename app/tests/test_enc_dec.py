@@ -1,3 +1,5 @@
+from concurrent.futures import process
+
 from app.crypto import base64_decode
 from app.processor import MessageProcessor
 from app.schemas import Message
@@ -23,7 +25,7 @@ def test_encryption_with_associated_data():
     associated_data = b"jdoe"
     message = Message(
         plaintext="Encrypt me",
-        associated_data=b"jdoe",
+        associated_data=associated_data,
     )
     processor.secret = "My super secret"
     token = processor.process_outbound(message=message)
@@ -48,7 +50,26 @@ def test_decryption_with_associated_data():
             associated_data=b"jdoe",
         )
     )
-    print(token)
+    # print(token)
     decrypted_message = processor.process_inbound(message=token)
     assert decrypted_message.plaintext == b"Encrypt me"
     assert decrypted_message._associated_data == b"jdoe"
+
+
+def test_forward_secrecy():
+    message = Message(
+        plaintext="Encrypt me",
+        associated_data=b"jdoe",
+    )
+    processor.secret = "My super secret"
+
+    processor.process_outbound(message=message)
+    chain_key_before = processor._chain_key
+    encryption_key_before = processor._aead._encryption_key
+
+    processor.process_outbound(message=message)
+    chain_key_after = processor._chain_key
+    encryption_key_after = processor._aead._encryption_key
+
+    assert chain_key_before != chain_key_after
+    assert encryption_key_before != encryption_key_after

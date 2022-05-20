@@ -7,6 +7,7 @@ from cryptography.exceptions import InvalidSignature
 from cryptography.hazmat.primitives import hashes, padding
 from cryptography.hazmat.primitives.ciphers import Cipher, algorithms, modes
 from cryptography.hazmat.primitives.hmac import HMAC
+from cryptography.hazmat.primitives.kdf.hkdf import HKDF
 from cryptography.hazmat.primitives.kdf.pbkdf2 import PBKDF2HMAC
 
 from .schemas import Message, Token, TokenAssociatedData
@@ -18,14 +19,29 @@ _MSG_TTL = 60
 _TOKEN_DELIMITER = "."
 
 
-def derive_key_from_low_entropy(key_seed: str, salt: str = None) -> bytes:
+def derive_key_from_low_entropy(
+    key_seed: str,
+    salt: str = None,
+    length: int = _KEY_SEED_LENGTH,
+) -> bytes:
     kdf = PBKDF2HMAC(
         algorithm=hashes.SHA256(),
-        length=_KEY_SEED_LENGTH,
+        length=length,
         salt=b"0" * 32 if salt is None else salt.encode(),
         iterations=390000,
     )
     key = kdf.derive(key_seed.encode())
+    return key
+
+
+def derive_key(key_seed: bytes, length: int) -> bytes:
+    kdf = HKDF(
+        algorithm=hashes.SHA256(),
+        length=length,
+        salt=b"0" * 32,
+        info=b"chain key",
+    )
+    key = kdf.derive(key_seed)
     return key
 
 
@@ -57,7 +73,6 @@ class AuthenticatedEncryption:
             raise ValueError(f"The key must be exactly {_KEY_SEED_LENGTH} bytes long.")
         self._signing_key = value[:_KEY_LENGTH]
         self._encryption_key = value[_KEY_LENGTH:]
-        print(self._encryption_key)
 
     def encrypt(
         self,
