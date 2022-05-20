@@ -12,7 +12,7 @@ class MessageProcessor:
     ) -> None:
         self.username = username
         self.secret = secret
-        self._N = 0
+        self._N_out = 0
 
     def __str__(self):
         return f"Message processor for {self.username} ({id(self)})"
@@ -48,6 +48,8 @@ class MessageProcessor:
             )
             self._chain_key = key[:32]
             self._aead.key = key[32:]
+
+            self._N_out += 1  # This should go to associated_data
 
             token = self._aead.encrypt(
                 plaintext=message.plaintext,
