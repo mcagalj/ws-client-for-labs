@@ -1,6 +1,5 @@
-from concurrent.futures import process
-
-from app.crypto import base64_decode
+import pytest
+from app.crypto import InvalidToken, base64_decode
 from app.processor import MessageProcessor
 from app.schemas import Message
 
@@ -32,44 +31,114 @@ def test_encryption_with_associated_data():
     # print(token)
     assert token is not None
     associated_data_from_token = base64_decode(token.split(".")[0])
-    assert associated_data_from_token == associated_data
+    assert associated_data in associated_data_from_token
 
 
 def test_decryption_with_no_associated_data():
-    processor.secret = "My super secret"
-    token = processor.process_outbound(message=Message(plaintext=b"Encrypt me"))
-    decrypted_message = processor.process_inbound(message=token)
-    assert decrypted_message.plaintext == b"Encrypt me"
+    processor_s = MessageProcessor(secret="secret")
+    processor_r = MessageProcessor(secret="secret")
+
+    plaintext = b"Encrypt me"
+    token = processor_s.process_outbound(message=Message(plaintext=plaintext))
+    decrypted_message = processor_r.process_inbound(message=token)
+    assert decrypted_message.plaintext == plaintext
 
 
 def test_decryption_with_associated_data():
-    processor.secret = "My super secret"
-    token = processor.process_outbound(
+    processor_s = MessageProcessor(secret="secret")
+    processor_r = MessageProcessor(secret="secret")
+
+    plaintext = b"Encrypt me"
+    associated_data = b"jdoe"
+    token = processor_s.process_outbound(
         message=Message(
-            plaintext=b"Encrypt me",
-            associated_data=b"jdoe",
+            plaintext=plaintext,
+            associated_data=associated_data,
         )
     )
-    # print(token)
-    decrypted_message = processor.process_inbound(message=token)
-    assert decrypted_message.plaintext == b"Encrypt me"
-    assert decrypted_message._associated_data == b"jdoe"
+    decrypted_message = processor_r.process_inbound(message=token)
+    assert decrypted_message.plaintext == plaintext
+    assert associated_data == decrypted_message._associated_data
+
+
+def test_decryption_with_desynchronized_message_counters():
+    processor_s = MessageProcessor(secret="secret")
+    processor_r = MessageProcessor(secret="secret")
+
+    plaintext = b"Encrypt me"
+    associated_data = b"jdoe"
+    processor_s.process_outbound(
+        message=Message(
+            plaintext=plaintext,
+            associated_data=associated_data,
+        )
+    )
+    processor_s.process_outbound(
+        message=Message(
+            plaintext=plaintext,
+            associated_data=associated_data,
+        )
+    )
+
+    token = processor_s.process_outbound(
+        message=Message(
+            plaintext=plaintext,
+            associated_data=associated_data,
+        )
+    )
+
+    decrypted_message = processor_r.process_inbound(message=token)
+    assert decrypted_message.plaintext == plaintext
+    assert associated_data == decrypted_message._associated_data
+
+
+def test_invalid_token():
+    processor_1 = MessageProcessor(secret="secret 1")
+    processor_2 = MessageProcessor(secret="secret 2")
+
+    plaintext = b"Encrypt me"
+    associated_data = b"jdoe"
+    token = processor_1.process_outbound(
+        message=Message(
+            plaintext=plaintext,
+            associated_data=associated_data,
+        )
+    )
+
+    with pytest.raises(InvalidToken):
+        processor_2.process_inbound(token)
 
 
 def test_forward_secrecy():
-    message = Message(
-        plaintext="Encrypt me",
-        associated_data=b"jdoe",
+    processor = MessageProcessor(secret="secret")
+
+    plaintext = b"Encrypt me"
+    associated_data = b"jdoe"
+
+    processor.process_outbound(
+        message=Message(
+            plaintext=plaintext,
+            associated_data=associated_data,
+        )
     )
-    processor.secret = "My super secret"
+    key_0 = processor._key
 
-    processor.process_outbound(message=message)
-    chain_key_before = processor._chain_key
-    encryption_key_before = processor._aead._encryption_key
+    processor.process_outbound(
+        message=Message(
+            plaintext=plaintext,
+            associated_data=associated_data,
+        )
+    )
+    key_1 = processor._key
 
-    processor.process_outbound(message=message)
-    chain_key_after = processor._chain_key
-    encryption_key_after = processor._aead._encryption_key
+    processor.process_outbound(
+        message=Message(
+            plaintext=plaintext,
+            associated_data=associated_data,
+        )
+    )
+    key_2 = processor._key
 
-    assert chain_key_before != chain_key_after
-    assert encryption_key_before != encryption_key_after
+    assert key_0 != key_1
+    assert key_0 != key_2
+    assert key_1 != key_2
