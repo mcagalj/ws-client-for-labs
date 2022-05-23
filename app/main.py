@@ -273,7 +273,7 @@ def do_manage_users(**kwargs):
                 print(
                     tabulate(
                         [[c, s] for c, s in users.items()],
-                        headers=["Client name", "Secret"],
+                        headers=["Client name", "Message Processor"],
                         tablefmt="fancy_grid",
                     )
                 )
