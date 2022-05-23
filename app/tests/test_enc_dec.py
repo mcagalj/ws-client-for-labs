@@ -1,53 +1,56 @@
+import pytest
 from app.processor import MessageProcessor
 from app.schemas import Message
 
-processor = MessageProcessor()
+# processor = MessageProcessor()
 
 
-def test_encryption_without_key():
-    message = Message(plaintext=b"Encrypt me")
-    processor.secret = None
+@pytest.fixture
+def message():
+    return Message(
+        plaintext=b"Encrypt me",
+        associated_data="jdoe",
+    )
+
+
+@pytest.fixture
+def processor_with_secret():
+    return MessageProcessor(secret="my super secret")
+
+
+# @pytest.fixture
+# def processor_full():
+#     return MessageProcessor(
+#         secret="my super secret",
+#         username="jdoe",
+#     )
+
+
+@pytest.mark.parametrize(
+    "processor",
+    [
+        MessageProcessor(),
+        MessageProcessor(secret="my super secret"),
+        MessageProcessor(
+            secret="my super secret",
+            username="jdoe",
+        ),
+    ],
+)
+def test_processor_construction(processor, message):
     token = processor.process_outbound(message=message)
     assert token == message
 
 
-# def test_encryption_with_no_associated_data():
-#     processor.secret = "My super secret"
-#     token = processor.process_outbound(message=Message(plaintext="Encrypt me"))
-#     # print(token)
-#     assert token is not None
+def test_processor_secret_setter(processor_with_secret):
+    new_secret = "new secret"
+    processor = processor_with_secret
+    processor.secret = new_secret
+    assert processor._key == new_secret
 
 
-# def test_encryption_with_associated_data():
-#     associated_data = b"jdoe"
-#     message = Message(
-#         plaintext="Encrypt me",
-#         associated_data=b"jdoe",
-#     )
-#     processor.secret = "My super secret"
-#     token = processor.process_outbound(message=message)
-#     # print(token)
-#     assert token is not None
-#     associated_data_from_token = base64_decode(token.split(".")[0])
-#     assert associated_data_from_token == associated_data
-
-
-# def test_decryption_with_no_associated_data():
-#     processor.secret = "My super secret"
-#     token = processor.process_outbound(message=Message(plaintext=b"Encrypt me"))
-#     decrypted_message = processor.process_inbound(message=token)
-#     assert decrypted_message.plaintext == b"Encrypt me"
-
-
-# def test_decryption_with_associated_data():
-#     processor.secret = "My super secret"
-#     token = processor.process_outbound(
-#         message=Message(
-#             plaintext=b"Encrypt me",
-#             associated_data=b"jdoe",
-#         )
-#     )
-#     print(token)
-#     decrypted_message = processor.process_inbound(message=token)
-#     assert decrypted_message.plaintext == b"Encrypt me"
-#     assert decrypted_message._associated_data == b"jdoe"
+def test_processor_secret_write_only(processor_with_secret):
+    processor = processor_with_secret
+    with pytest.raises(AttributeError) as err:
+        processor.secret
+    assert err.value.args[0] == "The secret is write-only."
