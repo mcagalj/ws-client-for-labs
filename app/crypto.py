@@ -3,7 +3,10 @@ import typing
 KEY_SEED_LENGTH = 64
 
 
-def derive_key_from_low_entropy(key_seed: str, salt: str = None) -> bytes:
+def derive_key_from_low_entropy(
+    key_seed: str,
+    salt: str = None,
+) -> bytes:
     pass
 
 
