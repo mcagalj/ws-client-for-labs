@@ -48,7 +48,7 @@ def test_decryption_with_associated_data():
             associated_data=b"jdoe",
         )
     )
-    print(token)
+    # print(token)
     decrypted_message = processor.process_inbound(message=token)
     assert decrypted_message.plaintext == b"Encrypt me"
     assert decrypted_message._associated_data == b"jdoe"
