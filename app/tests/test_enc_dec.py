@@ -44,7 +44,7 @@ def test_decryption_with_no_associated_data():
     assert decrypted_message.plaintext == plaintext
 
 
-def test_decryption_with_associated_data():
+def test_decryption_with_associated_data_sender_receiver():
     processor_s = MessageProcessor(secret="secret")
     processor_r = MessageProcessor(secret="secret")
 
