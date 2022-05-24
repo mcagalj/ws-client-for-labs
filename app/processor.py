@@ -9,10 +9,10 @@ from .crypto import (
 from .schemas import Message
 from .utils import base64_decode
 
+CTR_SIZE_BYTES = 4
+
 
 class MessageProcessor:
-    CTR_SIZE_BYTES = 4
-
     def __init__(
         self,
         secret: typing.Union[str, bytes, None] = None,
@@ -52,7 +52,7 @@ class MessageProcessor:
     def process_inbound(self, message: str) -> Message:
         counter = MessageProcessor._get_message_counter(message)
 
-        print(f"Received {counter} (local {self._N_in})")
+        print(f"INFO: received {counter} (local {self._N_in})")
 
         saved_key = self._key
         saved_counter = self._N_in
@@ -90,10 +90,7 @@ class MessageProcessor:
 
     def _set_message_counter(self, message: Message) -> Message:
         self._N_out += 1
-        associated_data = self._N_out.to_bytes(
-            MessageProcessor.CTR_SIZE_BYTES,
-            "big",
-        )
+        associated_data = self._N_out.to_bytes(CTR_SIZE_BYTES, "big")
         if message.associated_data is not None:
             associated_data += message.associated_data
 
@@ -105,7 +102,7 @@ class MessageProcessor:
     @staticmethod
     def _get_message_counter(token: str) -> int:
         return int.from_bytes(
-            base64_decode(token.split(".")[0])[: MessageProcessor.CTR_SIZE_BYTES],
+            base64_decode(token.split(".")[0])[:CTR_SIZE_BYTES],
             "big",
         )
 
@@ -122,9 +119,7 @@ class MessageProcessor:
     ) -> Message:
         try:
             message = self._aead.decrypt(token=message)
-            message.associated_data = message.associated_data[
-                MessageProcessor.CTR_SIZE_BYTES :
-            ]
+            message.associated_data = message.associated_data[CTR_SIZE_BYTES:]
             return message
         except InvalidToken:
             # Reset keys back to original values

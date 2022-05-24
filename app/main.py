@@ -34,7 +34,7 @@ from tabulate import tabulate
 from websocket import WebSocketApp, WebSocketConnectionClosedException
 
 from .crypto import InvalidToken
-from .processor import MessageProcessor
+from .processor import CTR_SIZE_BYTES, MessageProcessor
 from .schemas import Message
 from .utils import base64_decode
 
@@ -123,8 +123,7 @@ def parse_args():
 def on_message(ws, message, users):
     try:
         token = message.split(":")[-1].strip()
-        # username = base64_decode(token.split(".")[0]).decode()
-        username = base64_decode(token.split(".")[0])[8:].decode()
+        username = base64_decode(token.split(".")[0])[CTR_SIZE_BYTES:].decode()
         processor = users.get(username)
 
         if processor is not None:
