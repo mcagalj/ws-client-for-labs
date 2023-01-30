@@ -33,7 +33,7 @@ from InquirerPy.validator import EmptyInputValidator
 from tabulate import tabulate
 from websocket import WebSocketApp, WebSocketConnectionClosedException
 
-from .crypto import InvalidToken
+from .crypto import AuthenticatedEncryption, InvalidToken
 from .processor import CTR_SIZE_BYTES, MessageProcessor
 from .schemas import Message
 from .utils import base64_decode
@@ -120,7 +120,9 @@ def parse_args():
     return parser.parse_args()
 
 
-def on_message(ws, message, users):
+def on_message(ws, message, users, talking_event):
+    if not talking_event.is_set():
+        return
     try:
         token = message.split(":")[-1].strip()
         username = base64_decode(token.split(".")[0])[CTR_SIZE_BYTES:].decode()
@@ -163,12 +165,14 @@ def do_start_chat(**kwargs):
     username = kwargs.get("username")
     users = kwargs.get("users")
     stopped_event = kwargs.get("stopped_event")
+    talking_event = kwargs.get("talking_event")
     console = kwargs.get("console")
     ws = kwargs.get("ws")
 
     processor = users.get(username)
 
     while not stopped_event.is_set():
+        talking_event.set()
         try:
             message = console.read()
             if processor is not None:
@@ -180,16 +184,19 @@ def do_start_chat(**kwargs):
                 )
             ws.send(message)
         except KeyboardInterrupt:
+            talking_event.clear()
             break
         except EOFError:
+            talking_event.clear()
             return
         except WebSocketConnectionClosedException:
+            talking_event.clear()
             return
 
 
 def _separator(items):
     if isinstance(items, str):
-        return Separator(line=f"----- {items} -----")
+        return Separator(line=f" ----- {items} -----")
     elif isinstance(items, list):
         breadcrumb = " > ".join(items)
         print(Separator(line=f"----- {breadcrumb} -----"))
@@ -252,8 +259,10 @@ def do_manage_users(**kwargs):
                         users.update(
                             {
                                 username: MessageProcessor(
-                                    secret=secret, username=username
-                                )
+                                    aead=AuthenticatedEncryption,
+                                    secret=secret,
+                                    username=username,
+                                ),
                             }
                         )
                 except KeyboardInterrupt:
@@ -272,8 +281,8 @@ def do_manage_users(**kwargs):
             elif action == Action.SHOW_USERS:
                 print(
                     tabulate(
-                        [[c, s] for c, s in users.items()],
-                        headers=["Client name", "Secret"],
+                        [[c, p] for c, p in users.items()],
+                        headers=["Client name", "Message processor"],
                         tablefmt="fancy_grid",
                     )
                 )
@@ -297,11 +306,12 @@ def main():
 
     started_event = threading.Event()
     stopped_event = threading.Event()
+    talking_event = threading.Event()
 
     ws = WebSocketApp(
         url=args.url,
         header={},
-        on_message=lambda ws, message: on_message(ws, message, users),
+        on_message=lambda ws, message: on_message(ws, message, users, talking_event),
         on_open=lambda ws: on_open(ws, started_event),
         on_error=lambda ws, error: on_error(ws, error, stopped_event),
         on_close=lambda ws, *_: on_close(ws, stopped_event),
@@ -331,6 +341,7 @@ def main():
                     username=username,
                     users=users,
                     stopped_event=stopped_event,
+                    talking_event=talking_event,
                     console=console,
                     ws=ws,
                 )
@@ -341,6 +352,7 @@ def main():
                     stopped_event=stopped_event,
                 )
             elif action == Action.EXIT:
+                talking_event.clear()
                 sys.exit(0)
     except KeyboardInterrupt:
         pass

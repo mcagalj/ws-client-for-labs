@@ -1,9 +1,10 @@
 import pytest
-from app.crypto import InvalidToken, base64_decode
+
+from app.crypto import AuthenticatedEncryption, InvalidToken, base64_decode
 from app.processor import MessageProcessor
 from app.schemas import Message
 
-processor = MessageProcessor()
+processor = MessageProcessor(aead=AuthenticatedEncryption)
 
 
 def test_encryption_without_key():
@@ -35,8 +36,8 @@ def test_encryption_with_associated_data():
 
 
 def test_decryption_with_associated_data_sender_receiver():
-    processor_s = MessageProcessor(secret="secret")
-    processor_r = MessageProcessor(secret="secret")
+    processor_s = MessageProcessor(aead=AuthenticatedEncryption, secret="secret")
+    processor_r = MessageProcessor(aead=AuthenticatedEncryption, secret="secret")
 
     plaintext = b"Encrypt me"
     associated_data = b"jdoe"
@@ -52,8 +53,8 @@ def test_decryption_with_associated_data_sender_receiver():
 
 
 def test_password_reset():
-    processor_s = MessageProcessor(secret="secret")
-    processor_r = MessageProcessor(secret="secret")
+    processor_s = MessageProcessor(aead=AuthenticatedEncryption, secret="secret")
+    processor_r = MessageProcessor(aead=AuthenticatedEncryption, secret="secret")
 
     plaintext = b"Encrypt me"
     associated_data = b"jdoe"
@@ -82,8 +83,8 @@ def test_password_reset():
 
 
 def test_invalid_token():
-    processor_1 = MessageProcessor(secret="secret 1")
-    processor_2 = MessageProcessor(secret="secret 2")
+    processor_1 = MessageProcessor(aead=AuthenticatedEncryption, secret="secret 1")
+    processor_2 = MessageProcessor(aead=AuthenticatedEncryption, secret="secret 2")
 
     plaintext = b"Encrypt me"
     associated_data = b"jdoe"
@@ -99,8 +100,8 @@ def test_invalid_token():
 
 
 def test_decryption_with_desynchronized_message_counters():
-    processor_s = MessageProcessor(secret="secret")
-    processor_r = MessageProcessor(secret="secret")
+    processor_s = MessageProcessor(aead=AuthenticatedEncryption, secret="secret")
+    processor_r = MessageProcessor(aead=AuthenticatedEncryption, secret="secret")
 
     plaintext = b"Encrypt me"
     associated_data = b"jdoe"
@@ -130,9 +131,9 @@ def test_decryption_with_desynchronized_message_counters():
 
 
 def test_decryption_with_desynchronized_message_counters_2():
-    processor_s_1 = MessageProcessor(secret="secret 1")
-    processor_s_2 = MessageProcessor(secret="secret")
-    processor_r = MessageProcessor(secret="secret")
+    processor_s_1 = MessageProcessor(aead=AuthenticatedEncryption, secret="secret 1")
+    processor_s_2 = MessageProcessor(aead=AuthenticatedEncryption, secret="secret")
+    processor_r = MessageProcessor(aead=AuthenticatedEncryption, secret="secret")
 
     plaintext = b"Encrypt me"
     associated_data = b"jdoe"
@@ -160,7 +161,7 @@ def test_decryption_with_desynchronized_message_counters_2():
 
 
 def test_forward_secrecy():
-    processor = MessageProcessor(secret="secret")
+    processor = MessageProcessor(aead=AuthenticatedEncryption, secret="secret")
 
     plaintext = b"Encrypt me"
     associated_data = b"jdoe"

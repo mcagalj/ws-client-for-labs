@@ -1,7 +1,7 @@
 import typing
 
 from .crypto import (
-    AuthenticatedEncryption,
+    AuthenticatedEncryptionInterface,
     InvalidToken,
     derive_key,
     derive_key_from_low_entropy,
@@ -15,16 +15,18 @@ CTR_SIZE_BYTES = 4
 class MessageProcessor:
     def __init__(
         self,
+        aead: AuthenticatedEncryptionInterface,
         secret: typing.Union[str, bytes, None] = None,
         username: str = None,
     ) -> None:
+        self.aead = aead
         self.username = username
         self.secret = secret
         self._N_out = 0
         self._N_in = 0
 
     def __str__(self):
-        return f"Message processor for {self.username} ({id(self)})"
+        return f"{self.username} ({id(self)})"
 
     @property
     def secret(self):
@@ -45,7 +47,8 @@ class MessageProcessor:
                 salt=self.username,
             )
             self._chain_key = self._key[:32]
-            self._aead = AuthenticatedEncryption(self._key[32:])
+            # self._aead = AuthenticatedEncryption(self._key[32:])
+            self._aead = self.aead(self._key[32:])
         else:
             raise TypeError("The secret must be str or bytes.")
 
