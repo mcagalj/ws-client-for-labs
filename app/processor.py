@@ -1,20 +1,22 @@
 import typing
 
-from .crypto import AuthenticatedEncryption, derive_key_from_low_entropy
+from .crypto import AuthenticatedEncryptionInterface, derive_key_from_low_entropy
 from .schemas import Message
 
 
 class MessageProcessor:
     def __init__(
         self,
+        aead: AuthenticatedEncryptionInterface,
         secret: typing.Union[str, bytes, None] = None,
         username: str = None,
     ) -> None:
+        self.aead = aead
         self.username = username
         self.secret = secret
 
     def __str__(self):
-        return f"Message processor for {self.username} ({id(self)})"
+        return f"{self.username} ({id(self)})"
 
     @property
     def secret(self):
@@ -30,7 +32,8 @@ class MessageProcessor:
                 key_seed=value,
                 salt=self.username,
             )
-            self._aead = AuthenticatedEncryption(self._key)
+            # self._aead = AuthenticatedEncryption(self._key)
+            self._aead = self.aead(self._key)
         else:
             raise TypeError("The secret must be str.")
 

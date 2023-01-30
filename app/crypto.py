@@ -32,7 +32,17 @@ class InvalidToken(Exception):
     pass
 
 
-class AuthenticatedEncryption:
+class AuthenticatedEncryptionInterface:
+    def encrypt(
+        self, plaintext: bytes, associated_data: typing.Union[bytes, None] = None
+    ) -> bytes:
+        raise NotImplementedError
+
+    def decrypt(self, token: str) -> bytes:
+        raise NotImplementedError
+
+
+class AuthenticatedEncryption(AuthenticatedEncryptionInterface):
     """
     Heavily inspired by Fernet (https://cryptography.io).
     """

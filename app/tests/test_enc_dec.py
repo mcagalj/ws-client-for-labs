@@ -1,8 +1,8 @@
-from app.crypto import base64_decode
+from app.crypto import AuthenticatedEncryption, base64_decode
 from app.processor import MessageProcessor
 from app.schemas import Message
 
-processor = MessageProcessor()
+processor = MessageProcessor(aead=AuthenticatedEncryption)
 
 
 def test_encryption_without_key():
