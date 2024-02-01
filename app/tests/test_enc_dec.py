@@ -17,7 +17,6 @@ def test_encryption_without_key():
 def test_encryption_with_no_associated_data():
     processor.secret = "My super secret"
     token = processor.process_outbound(message=Message(plaintext="Encrypt me"))
-    # print(token)
     assert token is not None
 
 
