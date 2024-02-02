@@ -42,13 +42,13 @@ class MessageProcessor:
             self._key = None
             self._aead = None
         elif isinstance(value, str):
-            logger.info("Derive the key from low entropy secret")
+            logger.info("Deriving the key from low entropy secret")
             self._key = derive_key_from_low_entropy(
                 length=96,
                 key_seed=value,
                 salt=self.username,
             )
-            logger.info("Split derived key into chain and encryption")
+            logger.info("Splitting derived key into chain and encryption keys")
             self._chain_key = self._key[:32]
             # self._aead = AuthenticatedEncryption(self._key[32:])
             self._aead = self.aead(self._key[32:])
@@ -56,11 +56,9 @@ class MessageProcessor:
             raise TypeError("The secret must be str or bytes.")
 
     def process_inbound(self, message: str) -> Message:
-        logger.info(f"Received message: {message}")
         counter = MessageProcessor._get_message_counter(message)
-        logger.info(f"Message counter: {self._N_in} (local) vs {counter} (incoming)")
-
-        print(f"INFO: received {counter} (local {self._N_in})")
+        logger.info(f"Received message: {message}")
+        logger.info(f"Message counter:  {counter} (local {self._N_in})")        
 
         saved_key = self._key
         saved_counter = self._N_in
@@ -87,7 +85,8 @@ class MessageProcessor:
 
         return token
 
-    def _update_keys(self) -> None:
+    def _update_keys(self) -> None:        
+        logger.info("Updating key(s)")        
         key = derive_key(
             length=96,
             key_seed=self._chain_key,
@@ -98,6 +97,7 @@ class MessageProcessor:
 
     def _set_message_counter(self, message: Message) -> Message:
         self._N_out += 1
+        logger.info(f"Message counter: {self._N_out}")
         associated_data = self._N_out.to_bytes(CTR_SIZE_BYTES, "big")
         if message.associated_data is not None:
             associated_data += message.associated_data
@@ -115,7 +115,7 @@ class MessageProcessor:
         )
 
     def _skip_message_keys(self, until: int) -> None:
-        logger.info(f"Syncing the keys: K_{self._N_in} (local) vs K_{until} (incoming)")
+        logger.info(f"Syncing the keys: K[{self._N_in}] -> K[{until}]")
         while self._N_in < until:
             self._update_keys()
             self._N_in += 1

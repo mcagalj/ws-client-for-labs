@@ -96,12 +96,12 @@ class RawInput:
 class InteractiveConsole(RawInput, code.InteractiveConsole):
     def write(self, data):
         sys.stdout.write("\033[2K\033[E")
-        sys.stdout.write(fg.BLUE + style.BRIGHT + f"< {data}" + fg.RESET)
+        sys.stdout.write(fg.BLUE + f"< {data}" + fg.RESET + style.BRIGHT)
         sys.stdout.write("\n> ")
         sys.stdout.flush()
 
     def read(self):
-        return self.raw_input("> ")
+        return self.raw_input(style.BRIGHT + "> ")
 
 
 console = InteractiveConsole()
@@ -127,7 +127,7 @@ def on_message(ws, message, users, talking_event):
         token = message.split(":")[-1].strip()
         username = base64_decode(token.split(".")[0])[CTR_SIZE_BYTES:].decode()
         processor = users.get(username)
-
+        
         if processor is not None:
             processed_message = processor.process_inbound(token)
             console.write(
@@ -137,13 +137,14 @@ def on_message(ws, message, users, talking_event):
                 + processed_message.plaintext.decode()
             )
         else:
-            console.write(message)
+            console.write(message + fg.RED + " (unverified)" + fg.RESET)
 
     except InvalidToken:
         console.write(fg.RED + f"#{username}: Invalid Token" + fg.RESET)
         return
-    except Exception:
-        console.write(message)
+    except Exception:        
+        console.write(message + fg.RED + " (unverified)" + fg.RESET)
+        
 
 
 def on_error(ws, error, stopped_event):

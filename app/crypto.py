@@ -84,7 +84,7 @@ class AuthenticatedEncryption(AuthenticatedEncryptionInterface):
             raise ValueError(f"The key must be exactly {_KEY_SEED_LENGTH} bytes long.")
         self._signing_key = value[:_KEY_LENGTH]
         self._encryption_key = value[_KEY_LENGTH:]
-        logger.info(f"_signing_key and _encryption_key successfully set")
+        logger.info(f"Signing and encryption keys successfully set")
 
     def encrypt(
         self,
@@ -103,11 +103,11 @@ class AuthenticatedEncryption(AuthenticatedEncryptionInterface):
             associated_data_len = associated_data_len.to_bytes(
                 length=8, byteorder="big"
             )
-            print(f"{associated_data} {_associated_data_len} vs {associated_data_len}")
 
         current_time = int(time.time())
         current_time = current_time.to_bytes(length=8, byteorder="big")
 
+        logger.info(f"Encrypting outgoing message")
         iv, ciphertext = self._encrypt(plaintext)
 
         basic_parts = current_time + iv + ciphertext
@@ -120,6 +120,7 @@ class AuthenticatedEncryption(AuthenticatedEncryptionInterface):
             basic_parts = associated_data + basic_parts + associated_data_len
             basic_parts_encoded.insert(0, base64_encode(associated_data))
 
+        logger.info(f"Signing outgoing message")
         h = HMAC(self._signing_key, hashes.SHA256())
         h.update(basic_parts)
         hmac = h.finalize()
@@ -155,6 +156,7 @@ class AuthenticatedEncryption(AuthenticatedEncryptionInterface):
         except (TypeError, binascii.Error):
             raise InvalidToken
 
+        logger.info(f"Verifying incoming message timestamp")
         AuthenticatedEncryption._verify_timestamp(timestamp)
 
         basic_parts = timestamp + iv + ciphertext
@@ -165,7 +167,9 @@ class AuthenticatedEncryption(AuthenticatedEncryptionInterface):
             )
             basic_parts = associated_data + basic_parts + associated_data_len
 
+        logger.info(f"Verifying incoming message signature")        
         self._verify_signature(data=basic_parts, hmac=hmac)
+        logger.info(f"Decrypting incoming message")
         plaintext = self._decrypt(iv=iv, ciphertext=ciphertext)
 
         return Message(
