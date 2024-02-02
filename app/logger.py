@@ -1,6 +1,6 @@
 import logging
 
-logger = logging.getLogger("crypto_logger")
+logger = logging.getLogger("logger")
 logger.setLevel(
     logging.DEBUG
 )  # Set the logging level (DEBUG, INFO, WARNING, ERROR, CRITICAL)
