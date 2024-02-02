@@ -10,6 +10,7 @@ from cryptography.hazmat.primitives.hmac import HMAC
 from cryptography.hazmat.primitives.kdf.hkdf import HKDF
 from cryptography.hazmat.primitives.kdf.pbkdf2 import PBKDF2HMAC
 
+from .logger import logger
 from .schemas import Message, Token, TokenAssociatedData
 from .utils import base64_decode, base64_encode, check_bytes, check_string
 
@@ -83,6 +84,7 @@ class AuthenticatedEncryption(AuthenticatedEncryptionInterface):
             raise ValueError(f"The key must be exactly {_KEY_SEED_LENGTH} bytes long.")
         self._signing_key = value[:_KEY_LENGTH]
         self._encryption_key = value[_KEY_LENGTH:]
+        logger.info(f"_signing_key and _encryption_key successfully set")
 
     def encrypt(
         self,
@@ -94,10 +96,14 @@ class AuthenticatedEncryption(AuthenticatedEncryptionInterface):
         associated_data_len = 0
         if associated_data is not None:
             check_bytes("associated_data", associated_data)
+            _associated_data_len = len(associated_data).to_bytes(
+                length=8, byteorder="big"
+            )
             associated_data_len = len(associated_data) * 8
             associated_data_len = associated_data_len.to_bytes(
                 length=8, byteorder="big"
             )
+            print(f"{associated_data} {_associated_data_len} vs {associated_data_len}")
 
         current_time = int(time.time())
         current_time = current_time.to_bytes(length=8, byteorder="big")

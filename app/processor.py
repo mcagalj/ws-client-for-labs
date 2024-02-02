@@ -1,5 +1,4 @@
 import typing
-import logging
 
 from .crypto import (
     AuthenticatedEncryptionInterface,
@@ -7,18 +6,12 @@ from .crypto import (
     derive_key,
     derive_key_from_low_entropy,
 )
+from .logger import logger
 from .schemas import Message
 from .utils import base64_decode
 
-logger = logging.getLogger('__message_processor__')
-logger.setLevel(logging.INFO)
-console_handler = logging.StreamHandler()
-console_handler.setLevel(logging.INFO)
-formatter = logging.Formatter('%(name)s - %(levelname)s - %(message)s')
-console_handler.setFormatter(formatter)
-logger.addHandler(console_handler)
-
 CTR_SIZE_BYTES = 4
+
 
 class MessageProcessor:
     def __init__(
@@ -49,13 +42,13 @@ class MessageProcessor:
             self._key = None
             self._aead = None
         elif isinstance(value, str):
-            logger.info(f"Derive the key from low entropy secret")
+            logger.info("Derive the key from low entropy secret")
             self._key = derive_key_from_low_entropy(
                 length=96,
                 key_seed=value,
                 salt=self.username,
             )
-            logger.info(f"Split the derived key into _chain_key and _encryption_key'")
+            logger.info("Split derived key into chain and encryption")
             self._chain_key = self._key[:32]
             # self._aead = AuthenticatedEncryption(self._key[32:])
             self._aead = self.aead(self._key[32:])
@@ -94,7 +87,7 @@ class MessageProcessor:
 
         return token
 
-    def _update_keys(self) -> None:        
+    def _update_keys(self) -> None:
         key = derive_key(
             length=96,
             key_seed=self._chain_key,
@@ -125,7 +118,7 @@ class MessageProcessor:
         logger.info(f"Syncing the keys: K_{self._N_in} (local) vs K_{until} (incoming)")
         while self._N_in < until:
             self._update_keys()
-            self._N_in += 1            
+            self._N_in += 1
 
     def _try_skipped_message_keys(
         self,
